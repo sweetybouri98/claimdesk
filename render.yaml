@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: claimdesk
+    runtime: docker
+    plan: starter          # persistent disks need a paid instance
+    healthCheckPath: /health
+    disk: {name: data, mountPath: /data, sizeGB: 1}
+    envVars:
+      - {key: WORKSPACE_TOKEN, generateValue: true}
+      - {key: DEMO_PASSWORD, value: demo1234}
