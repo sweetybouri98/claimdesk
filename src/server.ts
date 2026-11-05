@@ -121,10 +121,10 @@ const receiptUpload: express.RequestHandler = (req, res, next) =>
     if (!err) return next();
     const msg = err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
       ? `That file is larger than ${MAX_MB}MB. Please upload a smaller photo or PDF.` : "Upload failed. Please try again.";
-    res.status(400).send(page("Error", `<div class="card">${esc(msg)} <a href="/claims/${encodeURIComponent(req.params.id as string)}">Back to claim</a></div>`));
+    res.status(400).send(page("Error", `<div class="card">${esc(msg)} <a href="/claims/${encodeURIComponent(String(req.params.id))}">Back to claim</a></div>`));
   });
 app.post("/claims/:id/receipt", auth, receiptUpload, (req, res) => {
-  if (!req.file) return void res.status(400).send(page("Error", `<div class="card">Upload an image or PDF (max ${MAX_MB}MB). <a href="/claims/${encodeURIComponent(req.params.id)}">Back to claim</a></div>`));
+  if (!req.file) return void res.status(400).send(page("Error", `<div class="card">Upload an image or PDF (max ${MAX_MB}MB). <a href="/claims/${encodeURIComponent(String(req.params.id))}">Back to claim</a></div>`));
   const ext = req.file.mimetype === "application/pdf" ? ".pdf" : (path.extname(req.file.originalname).toLowerCase().replace(/[^.a-z0-9]/g, "") || ".jpg");
   const name = crypto.randomBytes(12).toString("hex") + ext;
   fs.renameSync(req.file.path, path.join(UPLOADS, name));
