@@ -10,7 +10,8 @@ import { esc, money, page, pill, claimRow, CATEGORIES } from "./ui.js";
 
 const UPLOADS = process.env.UPLOAD_DIR || path.resolve("uploads");
 fs.mkdirSync(UPLOADS, { recursive: true });
-const upload = multer({ dest: UPLOADS, limits: { fileSize: 8 * 1024 * 1024 },
+const MAX_MB = 20;
+const upload = multer({ dest: UPLOADS, limits: { fileSize: MAX_MB * 1024 * 1024 },
   fileFilter: (_r, f, cb) => cb(null, /^(image\/|application\/pdf)/.test(f.mimetype)) });
 
 const app = express();
@@ -104,7 +105,7 @@ ${c.decision_comment ? `<p><b>Manager comment:</b> ${esc(c.decision_comment)}</p
 ${c.status === "draft" ? `<div class="card"><form method="post" action="/claims/${c.id}/submit"><b>Ready?</b> Submitting generates the manager's approval link. <button>Submit for approval</button></form></div>` : ""}
 ${c.status === "submitted" ? `<div class="card"><b>Manager approval link</b> (share this):<div class="copy">${esc(link)}</div><br><a class="btn ghost" href="/approve/${c.approval_token}" target="_blank">Open as manager</a></div>` : ""}
 <div class="card"><b>Receipt</b>${c.receipt_url ? `<p><a href="${esc(c.receipt_url)}" target="_blank">${/\.pdf$/i.test(c.receipt_url) ? "View PDF" : `<img class="rcpt" src="${esc(c.receipt_url)}" alt="receipt">`}</a></p>` : "<p>No receipt attached yet.</p>"}
-<form method="post" action="/claims/${c.id}/receipt" enctype="multipart/form-data"><input type="file" name="receipt" accept="image/*,application/pdf" required><br><br><button class="ghost">Upload receipt</button></form></div>
+<form method="post" action="/claims/${c.id}/receipt" enctype="multipart/form-data"><input type="file" name="receipt" accept="image/*,application/pdf" required> <small>Image or PDF, up to ${MAX_MB}MB</small><br><br><button class="ghost">Upload receipt</button></form></div>
 <div class="card"><b>Audit trail</b><ul class="tl">${q.eventsFor(c.id).map((e) => `<li><b>${esc(e.actor)}</b> ${esc(e.action)}${e.old_value && e.new_value && e.action.startsWith("edited") ? `: ${esc(e.old_value)} → ${esc(e.new_value)}` : ""} <small>${esc(e.at)} UTC</small></li>`).join("")}</ul></div>`));
 });
 app.post("/claims/:id", auth, (req, res) => {
@@ -115,8 +116,15 @@ app.post("/claims/:id/submit", auth, (req, res) => {
   try { q.submitClaim(W(res).id, Number(req.params.id), "employee"); res.redirect(`/claims/${req.params.id}`); }
   catch (e) { res.status(400).send(page("Error", `<div class="card">${esc((e as Error).message)}</div>`)); }
 });
-app.post("/claims/:id/receipt", auth, upload.single("receipt"), (req, res) => {
-  if (!req.file) return void res.status(400).send(page("Error", `<div class="card">Upload an image or PDF (max 8MB).</div>`));
+const receiptUpload: express.RequestHandler = (req, res, next) =>
+  upload.single("receipt")(req, res, (err: unknown) => {
+    if (!err) return next();
+    const msg = err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+      ? `That file is larger than ${MAX_MB}MB. Please upload a smaller photo or PDF.` : "Upload failed. Please try again.";
+    res.status(400).send(page("Error", `<div class="card">${esc(msg)} <a href="/claims/${encodeURIComponent(req.params.id as string)}">Back to claim</a></div>`));
+  });
+app.post("/claims/:id/receipt", auth, receiptUpload, (req, res) => {
+  if (!req.file) return void res.status(400).send(page("Error", `<div class="card">Upload an image or PDF (max ${MAX_MB}MB). <a href="/claims/${encodeURIComponent(req.params.id)}">Back to claim</a></div>`));
   const ext = req.file.mimetype === "application/pdf" ? ".pdf" : (path.extname(req.file.originalname).toLowerCase().replace(/[^.a-z0-9]/g, "") || ".jpg");
   const name = crypto.randomBytes(12).toString("hex") + ext;
   fs.renameSync(req.file.path, path.join(UPLOADS, name));
