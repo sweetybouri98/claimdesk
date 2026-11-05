@@ -35,7 +35,8 @@ app.get("/mcp/:token", noGet); app.delete("/mcp/:token", noGet);
 
 // ---------- Session (cookie holds workspace token) ----------
 const cookie = (req: express.Request, k: string) =>
-  req.headers.cookie?.split(";").map((s) => s.trim().split("=")).find(([n]) => n === k)?.[1];
+  { const v = req.headers.cookie?.split(";").map((s) => s.trim()).find((s) => s.startsWith(k + "="))?.slice(k.length + 1);
+    try { return v === undefined ? undefined : decodeURIComponent(v); } catch { return undefined; } };
 const auth: express.RequestHandler = (req, res, next) => {
   const ws = cookie(req, "ws") && q.wsByToken(cookie(req, "ws")!);
   if (!ws) return void res.redirect("/login");
@@ -50,7 +51,7 @@ app.get("/login", (_r, res) => res.send(page("Log in", `<div class="card" style=
 app.post("/login", (req, res) => {
   const ws = q.wsByLogin(req.body.name || "", req.body.password || "");
   if (!ws) return void res.status(401).send(page("Log in", `<div class="card">Wrong workspace or password. <a href="/login">Try again</a></div>`, false));
-  res.setHeader("Set-Cookie", `ws=${ws.token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000${req.secure ? "; Secure" : ""}`);
+  res.setHeader("Set-Cookie", `ws=${encodeURIComponent(ws.token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000${req.secure ? "; Secure" : ""}`);
   res.redirect("/");
 });
 app.get("/logout", (_r, res) => { res.setHeader("Set-Cookie", "ws=; Path=/; Max-Age=0"); res.redirect("/login"); });
@@ -150,7 +151,7 @@ app.get("/export.csv", auth, (req, res) => {
   res.type("text/csv").attachment("approved-claims.csv").send(csv);
 });
 app.get("/connect", auth, (req, res) => {
-  const url = `${base(req)}/mcp/${W(res).token}`;
+  const url = `${base(req)}/mcp/${encodeURIComponent(W(res).token)}`;
   res.send(page("Connect Claude", `<div class="card"><h2>Connect to Claude</h2><ol>
 <li>In Claude, open <b>Settings → Connectors → Add custom connector</b>.</li><li>Name it <b>ClaimDesk</b> and paste this URL:</li></ol>
 <div class="copy">${esc(url)}</div><p>Treat this URL like a password. Then try: <i>"File this receipt as a client lunch for Priya"</i> with a receipt photo attached.</p></div>`));
@@ -160,5 +161,5 @@ const ws = q.ensureWorkspace();
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
   console.log(`ClaimDesk on :${port}`);
-  console.log(`MCP path: /mcp/${ws.token}`);
+  console.log(`MCP path: /mcp/${encodeURIComponent(ws.token)}`);
 });
